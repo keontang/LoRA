@@ -15,12 +15,14 @@ class LoRALayer():
         r: int, 
         lora_alpha: int, 
         lora_dropout: float,
-        merge_weights: bool,
+        merge_weights: bool, # 表示是否将低秩适配权重合并到预训练权重中
     ):
         self.r = r
         self.lora_alpha = lora_alpha
         # Optional dropout
         if lora_dropout > 0.:
+            # nn.Dropout 表示每个神经元有概率 p 的可能性不被激活
+            # 不被激活在 nn.Dropout 实现中是将 tensor 部分值置为0
             self.lora_dropout = nn.Dropout(p=lora_dropout)
         else:
             self.lora_dropout = lambda x: x
@@ -40,6 +42,15 @@ class Embedding(nn.Embedding, LoRALayer):
         merge_weights: bool = True,
         **kwargs
     ):
+        # nn.Embedding：
+        #  随机初始化词向量，词向量值在正态分布N(0,1)中随机取值
+        #  embedding 层中只有一个参数 weight，在创建时它会从标准正态分布中进行初始化
+        #  weight 是 embedding 层的一个权重，weight 是可以训练得到的
+        #  weight 可以采用随机初始化，也可以采用预训练好的词向量初始化
+        #  假如我们已经使用了预训练的词嵌入并且不想让它在训练过程中自我更新，那么可以尝试冻结梯度，即：
+        #      emb.weight.requires_grad = False
+        #    - num_embeddings (int) – size of the dictionary of embeddings
+        #    - embedding_dim (int) – the size of each embedding vector
         nn.Embedding.__init__(self, num_embeddings, embedding_dim, **kwargs)
         LoRALayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=0,
                            merge_weights=merge_weights)
@@ -65,6 +76,12 @@ class Embedding(nn.Embedding, LoRALayer):
             if self.merge_weights and self.merged:
                 # Make sure that the weights are not merged
                 if self.r > 0:
+                    # Tensor.transpose(dim0, dim1) → Tensor
+                    #   A simple lookup table that stores embeddings of a fixed dictionary and size.
+                    #   This module is often used to store word embeddings and retrieve them using indices. 
+                    #   The input to the module is a list of indices, and the output is the corresponding word embeddings.
+                    #    - dim0 (int) – the first dimension to be transposed   转置的第一维
+                    #    - dim1 (int) – the second dimension to be transposed  转置的第二维
                     self.weight.data -= (self.lora_B @ self.lora_A).transpose(0, 1) * self.scaling
                 self.merged = False
         else:
